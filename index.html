@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production System & App Debugging Runbooks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0b0f19;
+            --bg-sidebar: #111827;
+            --bg-card: #1f2937;
+            --bg-code: #111827;
+            --border: #374151;
+            --border-focus: #4b5563;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent: #3b82f6;
+            --accent-hover: #60a5fa;
+            --accent-dim: rgba(59, 130, 246, 0.15);
+            --success: #10b981;
+            --tag-bg: #374151;
+            --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--bg-main); color: var(--text-main); font-family: var(--font-sans); display: flex; height: 100vh; overflow: hidden; }
+
+        /* Sidebar Architecture */
+        .sidebar { width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+        .sidebar-header { padding: 1.5rem; border-bottom: 1px solid var(--border); }
+        .sidebar-header h1 { font-size: 1rem; font-weight: 700; tracking: -0.02em; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+        .sidebar-header h1 span { background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: var(--font-mono); }
+
+        .search-container { padding: 1rem 1.5rem 0.5rem 1.5rem; }
+        .search-box { width: 100%; background: var(--bg-main); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--text-main); font-family: var(--font-sans); outline: none; transition: border-color 0.2s; }
+        .search-box:focus { border-color: var(--accent); }
+
+        .nav-scroll { flex: 1; overflow-y: auto; padding: 1rem 1rem 2rem 1rem; }
+        .nav-group { margin-bottom: 1.5rem; }
+        .nav-title { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; padding-left: 0.75rem; margin-bottom: 0.5rem; }
+
+        .tab-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: none; border: none; border-radius: 6px; color: var(--text-muted); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.15s ease; margin-bottom: 2px; }
+        .tab-btn:hover { background: var(--bg-card); color: var(--text-main); }
+        .tab-btn.active { background: var(--accent-dim); color: var(--accent-hover); font-weight: 600; }
+        .tab-btn .badge { font-size: 11px; font-family: var(--font-mono); background: var(--bg-main); padding: 2px 6px; border-radius: 4px; color: var(--text-muted); border: 1px solid var(--border); }
+        .tab-btn.active .badge { border-color: rgba(96, 165, 250, 0.3); color: var(--accent-hover); }
+
+        /* Main Content Container */
+        .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-main); }
+        .content-header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); background: var(--bg-sidebar); display: flex; justify-content: space-between; align-items: center; }
+        .content-title-area { display: flex; align-items: center; gap: 12px; }
+        .content-title { font-size: 1.25rem; font-weight: 600; }
+
+        .tag-meta { font-size: 12px; font-family: var(--font-mono); background: var(--tag-bg); padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-muted); }
+
+        /* Scenario Body Lists */
+        .scenarios-container { flex: 1; overflow-y: auto; padding: 2rem; }
+        .scenario-view { display: none; max-width: 900px; margin: 0 auto; }
+        .scenario-view.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        .step-card { display: flex; gap: 16px; background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
+        .step-num { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-card); border: 1px solid var(--border); color: var(--accent-hover); font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+
+        .step-content { flex: 1; min-width: 0; }
+        .step-label { font-size: 14px; font-weight: 500; margin-bottom: 10px; color: var(--text-main); }
+
+        /* Interactive Command Elements */
+        .cmd-box { background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 8px; position: relative; }
+        .cmd-box code { font-family: var(--font-mono); font-size: 13px; color: #f1f5f9; white-space: pre-wrap; word-break: break-all; }
+
+        .copy-btn { font-size: 11px; font-weight: 500; font-family: var(--font-sans); color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+        .copy-btn:hover { border-color: var(--border-focus); color: var(--text-main); background: #374151; }
+        .copy-btn.copied { background: var(--accent-dim); color: var(--accent-hover); border-color: rgba(96, 165, 250, 0.4); }
+
+        .note-box { font-size: 12px; color: var(--text-muted); padding-left: 4px; border-left: 2px solid var(--border-focus); margin-top: 6px; font-style: italic; }
+
+        /* Responsive Architecture */
+        @media(max-width: 850px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+            .nav-scroll { display: flex; overflow-x: auto; overflow-y: hidden; padding: 0.75rem; gap: 8px; }
+            .nav-group { margin-bottom: 0; display: flex; gap: 6px; align-items: center; }
+            .nav-title { display: none; }
+            .tab-btn { white-space: nowrap; width: auto; margin-bottom: 0; }
+            .search-container { display: none; }
+            .scenarios-container { padding: 1rem; }
+            .content-header { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>SRE RUNBOOK <span>v2.1</span></h1>
+        </div>
+        <div class="search-container">
+            <input type="text" id="searchBox" class="search-box" placeholder="Filter diagnostics..." oninput="filterNav()">
+        </div>
+        <div class="nav-scroll">
+            <div class="nav-group" id="group-infra">
+                <div class="nav-title">Infrastructure Logs</div>
+                <button class="tab-btn active" data-target="service" onclick="switchTab(this)">
+                    <span>Service Down</span> <span class="badge">Nginx</span>
+                </button>
+                <button class="tab-btn" data-target="port" onclick="switchTab(this)">
+                    <span>Port/Connection</span> <span class="badge">Network</span>
+                </button>
+                <button class="tab-btn" data-target="slow" onclick="switchTab(this)">
+                    <span>Slow Server</span> <span class="badge">Load</span>
+                </button>
+                <button class="tab-btn" data-target="ssh" onclick="switchTab(this)">
+                    <span>SSH Broken</span> <span class="badge">Auth</span>
+                </button>
+                <button class="tab-btn" data-target="dns" onclick="switchTab(this)">
+                    <span>DNS Issues</span> <span class="badge">Network</span>
+                </button>
+                <button class="tab-btn" data-target="pkg" onclick="switchTab(this)">
+                    <span>Package Errors</span> <span class="badge">Apt</span>
+                </button>
+                <button class="tab-btn" data-target="flow" onclick="switchTab(this)">
+                    <span>Master Flow</span> <span class="badge">All</span>
+                </button>
+            </div>
+
+            <div class="nav-group" id="group-apps">
+                <div class="nav-title">Application Layer</div>
+                <button class="tab-btn" data-target="mysql" onclick="switchTab(this)">
+                    <span>MySQL / Postgres</span> <span class="badge">Data</span>
+                </button>
+                <button class="tab-btn" data-target="redis" onclick="switchTab(this)">
+                    <span>Redis Cache</span> <span class="badge">RAM</span>
+                </button>
+                <button class="tab-btn" data-target="mongo" onclick="switchTab(this)">
+                    <span>MongoDB Engine</span> <span class="badge">NoSQL</span>
+                </button>
+                <button class="tab-btn" data-target="nginx-app" onclick="switchTab(this)">
+                    <span>Web/Proxy Server</span> <span class="badge">HTTP</span>
+                </button>
+                <button class="tab-btn" data-target="docker" onclick="switchTab(this)">
+                    <span>Docker Engine</span> <span class="badge">Containers</span>
+                </button>
+                <button class="tab-btn" data-target="generic" onclick="switchTab(this)">
+                    <span>Generic Runtime</span> <span class="badge">App</span>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="content-area">
+        <header class="content-header">
+            <div class="content-title-area">
+                <h2 id="currentTitle" class="content-title">Service Down</h2>
+                <span id="currentTag" class="tag-meta">Scope: Systemd</span>
+            </div>
+        </header>
+
+        <section class="scenarios-container" id="scenariosFrame">
+
+            <div id="service" class="scenario-view active" data-title="Service Down" data-tag="Scope: Systemd / Nginx">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Is the execution status running?</div><div class="cmd-box"><code>systemctl status nginx</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Inspect stack trace errors or termination logs</div><div class="cmd-box"><code>journalctl -u nginx -n 50</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify network port binds and descriptor parameters</div><div class="cmd-box"><code>ss -tulnp | grep nginx</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Test internal response handling via loopback</div><div class="cmd-box"><code>curl http://localhost:80</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Identify local packet dropping regulations</div><div class="cmd-box"><code>ufw status</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>iptables -L -n</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Validate configuration files sanity</div><div class="cmd-box"><code>nginx -t</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Verify partition storage write availability</div><div class="cmd-box"><code>df -h</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">8</div><div class="step-content"><div class="step-label">Assess kernel termination records (OOM Killer)</div><div class="cmd-box"><code>dmesg | grep -i "oom"</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>free -h</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="port" class="scenario-view" data-title="Port / Connection Troubleshooting" data-tag="Scope: Layer 3 & 4 Networking">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Check layer-3 routing availability</div><div class="cmd-box"><code>ping &lt;host&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Audit endpoint socket listening posture</div><div class="cmd-box"><code>nc -zv &lt;host&gt; &lt;port&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Execute hop-by-hop tracking trace</div><div class="cmd-box"><code>traceroute &lt;host&gt;</code><button class="copy-btn">Copy</button></div><div class="note-box">Where execution halts indicates where the block resides</div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Confirm daemon binding behavior on downstream node</div><div class="cmd-box"><code>ss -tulnp</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Verify remote edge filtering stack rules</div><div class="cmd-box"><code>iptables -L</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Inspect node forward routing table</div><div class="cmd-box"><code>ip route</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="slow" class="scenario-view" data-title="Slow Server Performance Diagnostics" data-tag="Scope: Host Performance & Capacity">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Evaluate task processor scheduling loads</div><div class="cmd-box"><code>top</code><button class="copy-btn">Copy</button></div><div class="note-box">Type 'P' inside utility interface to group execution sort tasks by compute consumption</div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Identify page space layout degradation</div><div class="cmd-box"><code>free -h</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>top</code><button class="copy-btn">Copy</button></div><div class="note-box">Type 'M' to group execution sort tasks by volatile storage footprint</div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Isolate blocks and channel storage performance limits</div><div class="cmd-box"><code>iostat -x 1</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>iotop</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Analyze data payload velocity constraints</div><div class="cmd-box"><code>iftop</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>nethogs</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Correlate context load metrics with available scheduler cores</div><div class="cmd-box"><code>uptime</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>nproc</code><button class="copy-btn">Copy</button></div><div class="note-box">If immediate metrics exceed total cores available, tasks are bottlenecked</div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Evaluate socket pool tracking limits</div><div class="cmd-box"><code>ss -s</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="ssh" class="scenario-view" data-title="SSH Terminal Access Issues" data-tag="Scope: Remote Management / Security">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Test fundamental point-to-point path behavior</div><div class="cmd-box"><code>ping &lt;host&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Verify port standard port status</div><div class="cmd-box"><code>nc -zv &lt;host&gt; 22</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify execution process lifecycle metrics on endpoint host</div><div class="cmd-box"><code>systemctl status sshd</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Initialize client trace mode to track handshaking</div><div class="cmd-box"><code>ssh -v user@host</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Evaluate target log vectors for denial warnings</div><div class="cmd-box"><code>cat /var/log/auth.log | grep Failed</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Correct local validation credential profiles</div><div class="cmd-box"><code>chmod 600 ~/.ssh/id_rsa</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>chmod 700 ~/.ssh/</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Analyze configuration permission variables</div><div class="cmd-box"><code>cat /etc/ssh/sshd_config | grep -i "permitroot\|passwordauth"</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="dns" class="scenario-view" data-title="DNS Resolution Fault Analysis" data-tag="Scope: Name Resolution">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Isolate layer-3 address routes from naming resolution issues</div><div class="cmd-box"><code>ping 8.8.8.8</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>ping google.com</code><button class="copy-btn">Copy</button></div><div class="note-box">If numerical tracking connects but name tracking drops, resolution stack is damaged</div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Inspect configurations matching nameserver endpoints</div><div class="cmd-box"><code>cat /etc/resolv.conf</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Test records using localized options vs fallback sources</div><div class="cmd-box"><code>dig google.com</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>dig @8.8.8.8 google.com</code><button class="copy-btn">Copy</button></div><div class="note-box">If direct public lookup succeeds, your configured system-level local upstream targets are invalid</div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Apply an immediate operational hotfix resolution path</div><div class="cmd-box"><code>echo "nameserver 8.8.8.8" &gt;&gt; /etc/resolv.conf</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Verify localized modern interface manager state</div><div class="cmd-box"><code>resolvectl status</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="pkg" class="scenario-view" data-title="Package Management / Apt Degradation" data-tag="Scope: Software Repositories">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Synchronize remote catalog indexes</div><div class="cmd-box"><code>apt update</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Enforce correction on broken library nodes</div><div class="cmd-box"><code>apt install -f</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Clear locked process tracking anomalies</div><div class="cmd-box"><code>rm /var/lib/dpkg/lock-frontend</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>dpkg --configure -a</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Ensure repository directory path capacity is sufficient</div><div class="cmd-box"><code>df -h /var</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>apt clean</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Verify remote configuration link strings</div><div class="cmd-box"><code>cat /etc/apt/sources.list</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="flow" class="scenario-view" data-title="Universal Incident First-Response Flow" data-tag="Scope: Emergency Diagnostics Grid">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify system unit lifecycle condition</div><div class="cmd-box"><code>systemctl status &lt;service&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Isolate recent runtime outputs and diagnostic events</div><div class="cmd-box"><code>journalctl -u &lt;service&gt; -n 50</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify network listener interface bindings</div><div class="cmd-box"><code>ss -tulnp</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Verify responses inside localized context boundaries</div><div class="cmd-box"><code>curl localhost:&lt;port&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Check layer-4 firewall configurations</div><div class="cmd-box"><code>ufw status</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Verify root file allocation limit boundaries</div><div class="cmd-box"><code>df -h</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Evaluate system-wide memory exhaustion parameters</div><div class="cmd-box"><code>free -h</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">8</div><div class="step-content"><div class="step-label">Monitor raw operational events and diagnostic outputs</div><div class="cmd-box"><code>tail -f /var/log/syslog</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="mysql" class="scenario-view" data-title="Relational Database Engines" data-tag="Binds: MySQL 3306 | Postgres 5432">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify system engine execution parameters</div><div class="cmd-box"><code>systemctl status mysql</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>systemctl status postgresql</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Audit database error logs for corruption indicators</div><div class="cmd-box"><code>journalctl -u mysql -n 50</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>tail -f /var/log/mysql/error.log</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify proper port listener states</div><div class="cmd-box"><code>ss -tulnp | grep 3306</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Validate native authentication handshake functions</div><div class="cmd-box"><code>mysql -u root -p</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>psql -U postgres</code><button class="copy-btn">Copy</button></div><div class="note-box">Immediate termination confirms authentication mismatches or socket failure</div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Inspect current process pipelines and transactions</div><div class="cmd-box"><code>mysql -e "SHOW PROCESSLIST;"</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>psql -c "SELECT * FROM pg_stat_activity;"</code><button class="copy-btn">Copy</button></div><div class="note-box">Check query states for resource blocks and row locks</div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Identify if client configuration bounds are saturated</div><div class="cmd-box"><code>mysql -e "SHOW STATUS LIKE 'Threads_connected';"</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>mysql -e "SHOW VARIABLES LIKE 'max_connections';"</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Verify layout volume file availability constraints</div><div class="cmd-box"><code>df -h /var/lib/mysql</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">8</div><div class="step-content"><div class="step-label">Inspect firewall filters and listener addresses</div><div class="cmd-box"><code>ufw allow 3306/tcp</code><button class="copy-btn">Copy</button></div><div class="note-box">Review bind-address properties inside your mysqld.cnf. Elements restricted to loopback (127.0.0.1) drop remote client routes.</div></div></div>
+            </div>
+
+            <div id="redis" class="scenario-view" data-title="Redis In-Memory Key-Value Storage" data-tag="Default Port: 6379">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify database service state</div><div class="cmd-box"><code>systemctl status redis</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Examine logging tracks for storage snapshot errors</div><div class="cmd-box"><code>journalctl -u redis -n 50</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>tail -f /var/log/redis/redis-server.log</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify network stack listening structures</div><div class="cmd-box"><code>ss -tulnp | grep 6379</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Check engine reactivity using standard test calls</div><div class="cmd-box"><code>redis-cli ping</code><button class="copy-btn">Copy</button></div><div class="note-box">Should return PONG. Any alternative execution indicates a handshake configuration error.</div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Examine volatile storage tracking maps and stats</div><div class="cmd-box"><code>redis-cli info memory</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>redis-cli info stats</code><button class="copy-btn">Copy</button></div><div class="note-box">Monitor current allocation against maximum thresholds. Reaching this causes cache key evictions.</div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Evaluate socket mapping totals</div><div class="cmd-box"><code>redis-cli info clients</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>redis-cli client list</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Trace inbound execution logic strings in real-time</div><div class="cmd-box"><code>redis-cli monitor</code><button class="copy-btn">Copy</button></div><div class="note-box">Warning: High computational footprint. Use carefully inside production clusters.</div></div></div>
+                <div class="step-card"><div class="step-num">8</div><div class="step-content"><div class="step-label">Audit interface and credential parameters</div><div class="cmd-box"><code>cat /etc/redis/redis.conf | grep -E "bind|requirepass|maxmemory"</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="mongo" class="scenario-view" data-title="MongoDB Document Database Engine" data-tag="Default Port: 27017">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify daemon lifecycle posture</div><div class="cmd-box"><code>systemctl status mongod</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Trace journal and aggregation warnings</div><div class="cmd-box"><code>journalctl -u mongod -n 50</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>tail -f /var/log/mongodb/mongod.log</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify cluster interface binding configuration</div><div class="cmd-box"><code>ss -tulnp | grep 27017</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Access programmatic control database shell</div><div class="cmd-box"><code>mongosh</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>mongosh --host 127.0.0.1 --port 27017</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Extract transactional internals inside execution prompt</div><div class="cmd-box"><code>db.serverStatus()</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>db.stats()</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Check block storage write capabilities</div><div class="cmd-box"><code>df -h /var/lib/mongodb</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Examine host parsing network bounds</div><div class="cmd-box"><code>cat /etc/mongod.conf | grep -A3 "net:"</code><button class="copy-btn">Copy</button></div><div class="note-box">Binding to loopback limits traffic to local callers only. Update config to 0.0.0.0 for broader routes.</div></div></div>
+            </div>
+
+            <div id="nginx-app" class="scenario-view" data-title="Nginx / Apache HTTP Servers" data-tag="Ports: 80 & 443">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify worker control status</div><div class="cmd-box"><code>systemctl status nginx</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>systemctl status apache2</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Test config updates BEFORE executing worker restarts</div><div class="cmd-box"><code>nginx -t</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>apache2ctl -t</code><button class="copy-btn">Copy</button></div><div class="note-box">Running malformed configurations causes worker execution failures and unexpected downtime.</div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Follow HTTP protocol proxy error fields</div><div class="cmd-box"><code>tail -f /var/log/nginx/error.log</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>tail -f /var/log/apache2/error.log</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Monitor inbound routing status logs</div><div class="cmd-box"><code>tail -f /var/log/nginx/access.log</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Verify network listener assignments</div><div class="cmd-box"><code>ss -tulnp | grep -E '80|443'</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+            <div id="docker" class="scenario-view" data-title="Docker Virtualization Runtime" data-tag="Scope: Application Containers">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Verify hypervisor/daemon background task execution</div><div class="cmd-box"><code>systemctl status docker</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">List unready or crashing container blocks</div><div class="cmd-box"><code>docker ps -a</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Extract standard runtime logs from target context</div><div class="cmd-box"><code>docker logs --tail 50 -f &lt;container_id_or_name&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Verify environment allocation load figures</div><div class="cmd-box"><code>docker stats</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Open diagnostic console within a target container</div><div class="cmd-box"><code>docker exec -it &lt;container_id_or_name&gt; /bin/sh</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>docker exec -it &lt;container_id_or_name&gt; /bin/bash</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">6</div><div class="step-content"><div class="step-label">Analyze network configuration topology bridges</div><div class="cmd-box"><code>docker network ls</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>docker network inspect &lt;network_name&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">7</div><div class="step-content"><div class="step-label">Purge unused overlay elements and cached image layers</div><div class="cmd-box"><code>docker system prune -a --volumes</code><button class="copy-btn">Copy</button></div><div class="note-box">Warning: Destructive execution. Removes stopped container caches and dangling volumes.</div></div></div>
+            </div>
+
+            <div id="generic" class="scenario-view" data-title="Any Generic Application Layer" data-tag="Scope: General Runtime Application Stack">
+                <div class="step-card"><div class="step-num">1</div><div class="step-content"><div class="step-label">Trace upstream unit tracking settings</div><div class="cmd-box"><code>systemctl status &lt;app-name&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">2</div><div class="step-content"><div class="step-label">Follow service logging outputs</div><div class="cmd-box"><code>journalctl -u &lt;app-name&gt; -f -n 100</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">3</div><div class="step-content"><div class="step-label">Verify configuration matching path bindings</div><div class="cmd-box"><code>ss -tulnp | grep &lt;app-port&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">4</div><div class="step-content"><div class="step-label">Inspect localized app configuration files</div><div class="cmd-box"><code>cat /etc/&lt;app-name&gt;/config.yaml</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>cat .env</code><button class="copy-btn">Copy</button></div></div></div>
+                <div class="step-card"><div class="step-num">5</div><div class="step-content"><div class="step-label">Isolate permission issues or access restrictions</div><div class="cmd-box"><code>ls -la /var/www/&lt;app-name&gt;</code><button class="copy-btn">Copy</button></div><div class="cmd-box"><code>chown -R www-data:www-data /var/www/&lt;app-name&gt;</code><button class="copy-btn">Copy</button></div></div></div>
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        // Tab switching engine
+        function switchTab(button) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.scenario-view').forEach(view => view.classList.remove('active'));
+
+            button.classList.add('active');
+            const targetId = button.getAttribute('data-target');
+            const targetView = document.getElementById(targetId);
+
+            if(targetView) {
+                targetView.classList.add('active');
+
+                // Update header metrics dynamically
+                document.getElementById('currentTitle').textContent = targetView.getAttribute('data-title');
+                document.getElementById('currentTag').textContent = targetView.getAttribute('data-tag');
+            }
+        }
+
+        // Text search engine for the sidebar navigation items
+        function filterNav() {
+            const query = document.getElementById('searchBox').value.toLowerCase();
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const labelText = btn.querySelector('span').textContent.toLowerCase();
+                const badgeText = btn.querySelector('.badge').textContent.toLowerCase();
+
+                if (labelText.includes(query) || badgeText.includes(query)) {
+                    btn.style.display = 'flex';
+                } else {
+                    btn.style.display = 'none';
+                }
+            });
+
+            // Auto-hide sections if they have no matching items
+            document.querySelectorAll('.nav-group').forEach(group => {
+                const visibleButtons = group.querySelectorAll('.tab-btn[style="display: flex;"], .tab-btn:not([style*="display: none"])');
+                group.style.display = visibleButtons.length === 0 ? 'none' : 'block';
+            });
+        }
+
+        // Global Event Delegation for Copy Operations
+        document.getElementById('scenariosFrame').addEventListener('click', function(e) {
+            if (e.target && e.target.classList.contains('copy-btn')) {
+                const button = e.target;
+                const codeSnippet = button.previousElementSibling.textContent;
+
+                // Handle Clipboard Management
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(codeSnippet).then(() => updateButtonState(button))
+                    .catch(err => fallbackCopy(button, codeSnippet));
+                } else {
+                    fallbackCopy(button, codeSnippet);
+                }
+            }
+        });
+
+        // Fallback Clipboard handling method for edge execution contexts
+        function fallbackCopy(btn, text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                updateButtonState(btn);
+            } catch (err) {
+                console.error('Fallback clipboard hook dropped execution', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function updateButtonState(btn) {
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('copied');
+            }, 1500);
+        }
+    </script>
+</body>
+</html>
